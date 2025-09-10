@@ -50,9 +50,8 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
         [CmdletBinding()]
         param(
             [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, ValueFromPipeline = $true)]
-            [Alias("AppID")]
-            [string[]]
-            $ApplicationID,
+            [PSCustomObject[]]
+            $Application,
 
             [Parameter(ValueFromPipelineByPropertyName = $true)]
             [ValidateSet("Launch", "Access")]
@@ -134,6 +133,8 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
         }
         process {
             foreach ($appID in $ApplicationID) {
+                $appId = $app.AppID
+                $appName = $app.Name
                 $regkey = Get-Item -Path "HKCR:\AppID\$appID"
 
                 try {
@@ -150,22 +151,24 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
                     $descriptor = [System.Security.AccessControl.RawSecurityDescriptor]::new($properties."$($permType)Permission", 0)
 
                     [PSCustomObject]@{
-                        Server        = $Server
-                        ApplicationID = $appID
-                        Identity      = $descriptor.Owner
-                        Rights        = "Owner$($permType)"
-                        Type          = 'Own'
-                        AccessMask    = 0
+                        Server          = $Server
+                        ApplicationID   = $appID
+                        ApplicationName = $appName
+                        Identity        = $descriptor.Owner -as [string]
+                        Rights          = "Owner$($permType)"
+                        Type            = 'Own'
+                        AccessMask      = 0
                     }
 
                     foreach ($accessRule in $descriptor.DiscretionaryAcl) {
                         [PSCustomObject]@{
-                            Server        = $Server
-                            ApplicationID = $appID
-                            Identity      = $accessRule.SecurityIdentifier -as [string]
-                            Rights        = (Resolve-Right -Mask $accessRule.AccessMask -Type $permType | Sort-Object) -join ', '
-                            Type          = $accessRule.AceType -as [string]
-                            AccessMask    = $accessRule.AccessMask
+                            Server          = $Server
+                            ApplicationID   = $appID
+                            ApplicationName = $appName
+                            Identity        = $accessRule.SecurityIdentifier -as [string]
+                            Rights          = (Resolve-Right -Mask $accessRule.AccessMask -Type $permType | Sort-Object) -join ', '
+                            Type            = $accessRule.AceType -as [string]
+                            AccessMask      = $accessRule.AccessMask
                         }
                     }
                 }
