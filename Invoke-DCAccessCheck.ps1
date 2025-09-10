@@ -189,6 +189,13 @@ function Compare-ScanData {
 
     :main foreach ($datum in $Data) {
         $domain = $DomainData[$datum.Server]
+        # resolve SIDs to Names
+        foreach ($property in $Configuration.SIDResolve) {
+            $propertyName = ('{0}_resolved' -f @($property))
+            $value = Resolve-Sid -sidValue $datum.$property -DomainData $DomainData -Server $datum.Server
+            Add-Member -InputObject $datum -MemberType NoteProperty -Name $propertyName -Value $value -Force
+        }
+
         foreach ($property in $Configuration.DomainSIDResolve) {
             $datum.$property = $datum.$property -replace $domain.DomainSID, '%DomainSID%'
             $isDefault = $false
@@ -208,6 +215,30 @@ function Compare-ScanData {
             $datum
         }
     }
+}
+
+function Resolve-Sid {
+    [CmdletBinding()]
+    param (
+        $sidValue,
+
+        $DomainData,
+
+        $Server
+    )
+    if ($domainData[$Server].IdentityMapping.ContainsKey($sidValue)) {
+        return $domainData[$Server].IdentityMapping[$sidValue]
+    }
+    try {
+        $sidObj = New-Object System.Security.Principal.SecurityIdentifier ($sidValue)
+        $value = $sidObj.Translate([System.Security.Principal.NTAccount]) | Select-Object -ExpandProperty 'Value'
+    }
+    catch [System.Security.Principal.IdentityNotMappedException] {
+        $value = $sidValue
+    }
+    $domainData[$Server].IdentityMapping.Add($sidValue,$value)
+
+    return $value
 }
 
 function Export-ScanResult {

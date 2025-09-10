@@ -16,6 +16,11 @@
         'Sddl'
     )
 
+    # SID Properties on found entries that should be resolved to names
+    SIDResolve = @(        
+    )
+
+
     # Where to select the default values from
     DefaultPaths     = @(
         'defaults\WinRM.psd1'
