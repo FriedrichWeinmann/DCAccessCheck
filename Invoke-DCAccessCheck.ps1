@@ -55,19 +55,30 @@ function Get-DomainData {
             DomainSID       = ''
             DomainName      = (Get-CimInstance -ClassName win32_ComputerSystem).Domain
             DefaultPolicies = @()
+            PolicyMapping   = @()
+            IdentityMapping = @{}
         }
     }
     $byDomain = $results | Group-Object -Property DomainName
     $domainSIDs = @{}
     $domainPolicies = @{ }
+    $domainPolicyMapping = @{ }
     foreach ($domain in $byDomain.Name) {
         $domainSIDs[$domain] = (Get-ADDomain -Server $domain @param).DomainSID
         $domainPolicies[$domain] = (Get-ADObject -Server $domain @param -LDAPFilter '(&(objectCategory=groupPolicyContainer)(isCriticalSystemObject=TRUE))' -Properties CN).CN
+        $domainPolicyMapping[$domain] = (Get-ADObject -Server $domain @param -LDAPFilter '(objectClass=groupPolicyContainer)' -Properties CN,gPCFileSysPath,displayName | ForEach-Object {
+            [PSCustomObject]@{
+                Name = $_.CN
+                DisplayName = $_.displayName
+                Path = $_.gPCFileSysPath -replace '\\\\[^\\]+\\', ''
+            }
+        }) | Sort-Object -Property Name
     }
     $resultHash = @{ }
     foreach ($result in $results) {
         $result.DomainSID = $domainSIDs[$result.DomainName]
         $result.DefaultPolicies = $domainPolicies[$result.domainName]
+        $result.PolicyMapping = $domainPolicyMapping[$result.domainName]
         $resultHash[$result.Server] = $result
     }
     $resultHash
