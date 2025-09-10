@@ -16,6 +16,11 @@
         'Identity'
     )
 
+    # SID Properties on found entries that should be resolved to names
+    SIDResolve = @(
+        'Identity'
+    )
+
     # Where to select the default values from
     DefaultPaths     = @(
         'defaults\sysvol-access.psd1'

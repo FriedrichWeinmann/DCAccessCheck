@@ -31,6 +31,10 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
             [string]
             $Server,
 
+            #additional Info (e.g. Name of GPO)
+            [string]
+            $aditoinalInfo = [string]::Empty,
+
             [switch]
             $IncludeInherited
         )
@@ -40,6 +44,7 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
             Server           = $Server
             PathType         = $PathType
             Path             = $Path
+            AdditionalInfo   = $aditoinalInfo
             Identity         = "$($acl.GetOwner([System.Security.Principal.SecurityIdentifier]))"
             Rights           = 'Owner'
             Type             = 'Allow'
@@ -53,6 +58,7 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
                 Server           = $Server
                 PathType         = $PathType
                 Path             = $Path
+                AdditionalInfo   = $aditoinalInfo
                 Identity         = "$($ace.IdentityReference)"
                 Rights           = $ace.FileSystemRights -as [string]
                 Type             = $ace.AccessControlType -as [string]
@@ -89,14 +95,16 @@ Invoke-Command @param -ArgumentList $DomainData -ScriptBlock {
     foreach ($domainRoot in $domainRoots) {
         Get-ChildItem -LiteralPath $domainRoot.FullName -Force -Recurse | ForEach-Object {
             $pathType = $types[$_.PSIsContainer]
+            $additonalInfo = [string]::Empty
             if ($_.FullName -eq "$($domainRoot.FullName)\DfsrPrivate") { $pathType = 'DfsrRoot' }
             elseif ($_.FullName -eq "$($domainRoot.FullName)\Policies") { $pathType = 'GposRoot' }
             elseif ($_.FullName -eq "$($domainRoot.FullName)\Scripts") { $pathType = 'ScriptsDir' }
-            elseif ($_.FullName -match "^$([regex]::Escape("$($domainRoot.FullName)\Policies"))\\\{(([0-9a-fA-F]){8}-([0-9a-fA-F]){4}-([0-9a-fA-F]){4}-([0-9a-fA-F]){4}-([0-9a-fA-F]){12})\}$") {
+            elseif ($_.FullName -match "^$([regex]::Escape("$($domainRoot.FullName)\Policies"))\\(\{(?:(?:[0-9a-fA-F]){8}-(?:[0-9a-fA-F]){4}-(?:[0-9a-fA-F]){4}-(?:[0-9a-fA-F]){4}-(?:[0-9a-fA-F]){12})\})$") {
                 $pathType = 'GpoDirectory'
+                $additonalInfo = ($DomainData[$serverName].PolicyMapping | Where-Object { $_.Name -eq $matches[1] }) | Select-Object -ExpandProperty DisplayName
                 if ($_.Name -in $DomainData[$serverName].DefaultPolicies) { $pathType = 'DefaultPolicyDir' }
             }
-            Get-Access -Path $_.FullName -PathType $pathType -Server $serverName
+            Get-Access -Path $_.FullName -PathType $pathType -Server $serverName -AditoinalInfo $additonalInfo
         }
     }
 }

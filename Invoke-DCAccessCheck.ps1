@@ -55,19 +55,30 @@ function Get-DomainData {
             DomainSID       = ''
             DomainName      = (Get-CimInstance -ClassName win32_ComputerSystem).Domain
             DefaultPolicies = @()
+            PolicyMapping   = @()
+            IdentityMapping = @{}
         }
     }
     $byDomain = $results | Group-Object -Property DomainName
     $domainSIDs = @{}
     $domainPolicies = @{ }
+    $domainPolicyMapping = @{ }
     foreach ($domain in $byDomain.Name) {
         $domainSIDs[$domain] = (Get-ADDomain -Server $domain @param).DomainSID
         $domainPolicies[$domain] = (Get-ADObject -Server $domain @param -LDAPFilter '(&(objectCategory=groupPolicyContainer)(isCriticalSystemObject=TRUE))' -Properties CN).CN
+        $domainPolicyMapping[$domain] = (Get-ADObject -Server $domain @param -LDAPFilter '(objectClass=groupPolicyContainer)' -Properties CN,gPCFileSysPath,displayName | ForEach-Object {
+            [PSCustomObject]@{
+                Name = $_.CN
+                DisplayName = $_.displayName
+                Path = $_.gPCFileSysPath -replace '\\\\[^\\]+\\', ''
+            }
+        }) | Sort-Object -Property Name
     }
     $resultHash = @{ }
     foreach ($result in $results) {
         $result.DomainSID = $domainSIDs[$result.DomainName]
         $result.DefaultPolicies = $domainPolicies[$result.domainName]
+        $result.PolicyMapping = $domainPolicyMapping[$result.domainName]
         $resultHash[$result.Server] = $result
     }
     $resultHash
@@ -178,6 +189,13 @@ function Compare-ScanData {
 
     :main foreach ($datum in $Data) {
         $domain = $DomainData[$datum.Server]
+        # resolve SIDs to Names
+        foreach ($property in $Configuration.SIDResolve) {
+            $propertyName = ('{0}_resolved' -f @($property))
+            $value = Resolve-Sid -sidValue $datum.$property -DomainData $DomainData -Server $datum.Server
+            Add-Member -InputObject $datum -MemberType NoteProperty -Name $propertyName -Value $value -Force
+        }
+
         foreach ($property in $Configuration.DomainSIDResolve) {
             $datum.$property = $datum.$property -replace $domain.DomainSID, '%DomainSID%'
             $isDefault = $false
@@ -197,6 +215,30 @@ function Compare-ScanData {
             $datum
         }
     }
+}
+
+function Resolve-Sid {
+    [CmdletBinding()]
+    param (
+        $sidValue,
+
+        $DomainData,
+
+        $Server
+    )
+    if ($domainData[$Server].IdentityMapping.ContainsKey($sidValue)) {
+        return $domainData[$Server].IdentityMapping[$sidValue]
+    }
+    try {
+        $sidObj = New-Object System.Security.Principal.SecurityIdentifier ($sidValue)
+        $value = $sidObj.Translate([System.Security.Principal.NTAccount]) | Select-Object -ExpandProperty 'Value'
+    }
+    catch [System.Security.Principal.IdentityNotMappedException] {
+        $value = $sidValue
+    }
+    $domainData[$Server].IdentityMapping.Add($sidValue,$value)
+
+    return $value
 }
 
 function Export-ScanResult {
